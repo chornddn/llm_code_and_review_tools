@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Read-only CLI for wiki.whamcloud.com (Confluence Server) for LLM agents.
 
-Prints JSON to stdout. Authenticates with a personal access token (PAT)
+Prints JSON to stdout (Markdown with --md on get, search, children, spaces).
+Authenticates with a personal access token (PAT)
 from the macOS Keychain. The tool never prints the token, never takes it
 as a command-line argument, and never sends it to another host.
 
@@ -198,11 +199,46 @@ def brief(r):
             "url": BASE + r["_links"]["webui"]}
 
 
+def emit(data, args, to_md):
+    """Print data as JSON, or as Markdown when --md is set."""
+    print(to_md(data) if args.md else json.dumps(data))
+
+
+def md_pages(pages):
+    return "\n".join(f"- [{p['title']}]({p['url']}) ({p['space']}, id {p['id']})"
+                     for p in pages)
+
+
+def md_page(p):
+    ancestors = " > ".join(p["ancestors"])
+    head = [f"# {p['title']}", "",
+            f"- URL: {p['url']}", f"- Space: {p['space']}",
+            f"- Version: {p['version']} (modified {p['modified']})"]
+    if ancestors:
+        head.append(f"- Path: {ancestors}")
+    if p["truncated"]:
+        head.append("- Truncated: yes")
+    body = p["body"]
+    if p["format"] == "storage":
+        body = "```html\n" + body + "\n```"
+    return "\n".join(head) + "\n\n" + body
+
+
 def cmd_get(args):
-    p = api(f"/rest/api/content/{resolve(args.target)}", expand=EXPAND)
-    body = p["body"]["storage"]["value"]
-    if args.format == "text":
-        body = to_text(body)
+    view = args.md and args.format == "text"
+    p = api(f"/rest/api/content/{resolve(args.target)}",
+            expand=EXPAND + (",body.view" if view else ""))
+    if view:
+        sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+        try:
+            from wiki_md import to_markdown
+        except ImportError:
+            die("--md needs the markdownify package: pip install markdownify")
+        body = to_markdown(p["body"]["view"]["value"], BASE)
+    else:
+        body = p["body"]["storage"]["value"]
+        if args.format == "text":
+            body = to_text(body)
     truncated = args.max_chars and len(body) > args.max_chars
     if truncated:
         body = body[:args.max_chars]
@@ -210,7 +246,9 @@ def cmd_get(args):
     out.update(version=p["version"]["number"], modified=p["version"]["when"],
                ancestors=[a["title"] for a in p.get("ancestors", [])],
                truncated=bool(truncated), body=body)
-    print(json.dumps(out))
+    if args.md:
+        out["format"] = args.format
+    emit(out, args, md_page)
 
 
 def cmd_search(args):
@@ -221,39 +259,42 @@ def cmd_search(args):
         if args.space:
             cql += f' AND space = "{args.space}"'
     res = api("/rest/api/content/search", cql=cql, limit=args.limit, expand="space")
-    print(json.dumps([brief(r) for r in res["results"]]))
+    emit([brief(r) for r in res["results"]], args, md_pages)
 
 
 def cmd_children(args):
     res = api(f"/rest/api/content/{resolve(args.target)}/child/page", limit=args.limit, expand="space")
-    print(json.dumps([brief(r) for r in res["results"]]))
+    emit([brief(r) for r in res["results"]], args, md_pages)
 
 
 def cmd_spaces(args):
     res = api("/rest/api/space", limit=args.limit)
-    print(json.dumps([{"key": s["key"], "name": s["name"]} for s in res["results"]]))
+    emit([{"key": s["key"], "name": s["name"]} for s in res["results"]], args,
+         lambda spaces: "\n".join(f"- `{s['key']}`: {s['name']}" for s in spaces))
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
+    md = argparse.ArgumentParser(add_help=False)
+    md.add_argument("--md", action="store_true", help="print Markdown instead of JSON")
 
     s = sub.add_parser("auth"); s.add_argument("action", choices=["set", "status", "clear"])
     s.set_defaults(fn=cmd_auth)
 
-    s = sub.add_parser("get"); s.add_argument("target")
+    s = sub.add_parser("get", parents=[md]); s.add_argument("target")
     s.add_argument("--format", choices=["text", "storage"], default="text")
     s.add_argument("--max-chars", type=int, default=0, help="truncate body (0 = no limit)")
     s.set_defaults(fn=cmd_get)
 
-    s = sub.add_parser("search"); s.add_argument("query")
+    s = sub.add_parser("search", parents=[md]); s.add_argument("query")
     s.add_argument("--space"); s.add_argument("--cql", action="store_true", help="QUERY is raw CQL")
     s.add_argument("--limit", type=int, default=20); s.set_defaults(fn=cmd_search)
 
-    s = sub.add_parser("children"); s.add_argument("target")
+    s = sub.add_parser("children", parents=[md]); s.add_argument("target")
     s.add_argument("--limit", type=int, default=100); s.set_defaults(fn=cmd_children)
 
-    s = sub.add_parser("spaces"); s.add_argument("--limit", type=int, default=100)
+    s = sub.add_parser("spaces", parents=[md]); s.add_argument("--limit", type=int, default=100)
     s.set_defaults(fn=cmd_spaces)
 
     args = ap.parse_args()
