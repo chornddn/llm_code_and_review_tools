@@ -1,6 +1,6 @@
 ---
 name: gerrit-patch-workflow
-description: This skill should be used for work on Gerrit changes with the gerrit/gc CLI - "what comments are on this patch", "reply to the review feedback", "address the reviewer comments", "mark that thread done", "shepherd this patch series", "what is the status of my patches", "post a review on this change", "add a reviewer", "check the CI status of my patches", "upload the new patchset", "push this commit to Gerrit", "rebase and repush the series", "is there already a patch for this", "find the follow-up to this change". Covers comment triage, staged replies, uploading patchsets, multi-patch series sessions, finding related changes, and Lustre commit-message rules.
+description: This skill should be used for work on Gerrit changes with the gerrit/gc CLI - "what comments are on this patch", "reply to the review feedback", "address the reviewer comments", "mark that thread done", "shepherd this patch series", "what is the status of my patches", "post a review on this change", "add a reviewer", "check the CI status of my patches", "upload the new patchset", "push this commit to Gerrit", "rebase and repush the series", "is there already a patch for this", "find the follow-up to this change". Covers comment triage, staged replies, uploading patchsets, multi-patch series sessions and finding related changes. Lustre commit-message rules are in the lustre-commit skill.
 version: 0.1.0
 ---
 
@@ -247,39 +247,16 @@ files: rank their directory with `--path`.
 
 ## Lustre commit-message rules
 
-These are enforced by the tree's `commit-msg` hook, and a patch that
-violates them cannot be pushed:
+The `lustre-commit` skill in the Lustre tree
+(`.agents/skills/lustre-commit/SKILL.md`, from LU-20860) holds the
+commit-message rules: the summary line, the trailers that the
+`commit-msg` hook accepts, `Assisted-by:`, `Change-Id:` and
+`Test-Parameters:`. Use that skill. A branch that is older than LU-20860
+does not have it, so read it from master:
 
-- Subject `LU-nnnnn component: short description`, 62 columns at most. Use
-  `LU-0000` when no ticket has been given.
-- Body wrapped at 70 columns at most (the commit-msg hook's limits are
-  62 and 70; an older message amended may fail them on lines you did not
-  touch). ASCII only: no em dashes, no curly
-  quotes. Reviewers also object to `--` used as a dash, so use none:
-  a comma, a colon, parentheses or a new sentence instead.
-- The signoff section must be contiguous: no blank lines between
-  trailers.
-- **Never `Co-Authored-By:`**: the hook rejects it. Credit an agent with
-  `Assisted-by: ClaudeCode:<model-id>` instead, with the id of the model
-  actually running.
-- Accepted trailers: `Assisted-by`, `Build-Parameters`, `Change-Id`,
-  `CoverityID`, `Fixes`, `Linux-commit`, `Lustre-change`,
-  `Lustre-commit`, `Signed-off-by`, `Test-Parameters`, plus the
-  name+email ones (`Acked-by`, `Tested-by`, `Reported-by`, `Reviewed-by`,
-  `Suggested-by`, `CC`). Run `.git/hooks/commit-msg --help` for the
-  authoritative list.
-- On amend, preserve the existing `Change-Id`. Never invent one, and
-  never add one to a new commit -- the hook generates it.
-- `Test-Parameters` lines (`testlist=`, `clientdistro=`, `env=` and the
-  like) may go on any patch, to run the tests or distros that exercise
-  it. Only `Test-Parameters: trivial`, which cuts CI back to a minimal
-  run, is restricted: use it on test-only patches, or on a patch whose
-  only kernel change is to debug messages (the text, arguments or mask
-  of a `CDEBUG`, `CERROR` and the like).
-- Check before committing: `git diff HEAD | ./contrib/scripts/checkpatch.pl`
-
-A commit message that walks through the code is too verbose. Describe
-what was wrong and what changed.
+```bash
+git show origin/master:.agents/skills/lustre-commit/SKILL.md
+```
 
 ## Uploading a patchset
 
